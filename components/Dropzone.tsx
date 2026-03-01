@@ -188,7 +188,7 @@ export default function Dropzone({
 
       // Use the FileSystem API to support dropped folders.
       const items = Array.from(e.dataTransfer.items);
-      if (items.length > 0 && items[0].webkitGetAsEntry) {
+      if (items.length > 0 && typeof items[0].webkitGetAsEntry === 'function') {
         const collected: File[] = [];
         for (const item of items) {
           const entry = item.webkitGetAsEntry();

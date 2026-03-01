@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Base resets aligned with Untitled UI conventions
+--------------------------------------------------------------------------- */
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    /* Prevent iOS font size inflation */
+    -webkit-text-size-adjust: 100%;
+    /* Smooth scrolling */
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-gray-25 text-gray-700 font-sans antialiased;
+    min-height: 100vh;
+  }
+
+  /* Remove default list styles when used semantically */
+  [role='list'] {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Focus ring: use brand ring on interactive elements */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-600 ring-offset-2;
+  }
+
+  /* Reduced-motion: strip all durations */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0ms !important;
+      transition-duration: 0ms !important;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Utility layer additions
+--------------------------------------------------------------------------- */
+
+@layer utilities {
+  /* File list drag-in-progress elevation */
+  .dragging-row {
+    @apply shadow-md bg-white opacity-90;
+  }
+
+  /* Monospace path text */
+  .text-path {
+    @apply font-mono text-[13px] leading-5;
+  }
+
+  /* Truncate long filenames at 40ch */
+  .filename-truncate {
+    @apply truncate max-w-[40ch];
+  }
+
+  /* Smooth height transition for collapsible panels */
+  .collapsible-panel {
+    overflow: hidden;
+    transition: max-height 250ms ease-in-out, opacity 200ms ease-in-out;
+  }
+
+  /* Spinner animation */
+  .spinner {
+    @apply animate-spin-slow;
+  }
+}

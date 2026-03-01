@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Netlify
+.netlify
+
 # Next.js
 .next/
 out/

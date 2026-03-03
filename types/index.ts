@@ -29,6 +29,8 @@ export interface AppFile {
   file: File;
   /** Loading state while file is being read */
   loading: boolean;
+  /** Per-file error preventing conversion (e.g. "Password protected") */
+  error: string | null;
 }
 
 // ---------------------------------------------------------------------------

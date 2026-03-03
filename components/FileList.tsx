@@ -10,6 +10,7 @@ import {
   Trash2,
   ChevronDown,
   Loader2,
+  Lock,
 } from 'lucide-react';
 import type { AppFile, FileFormat } from '@/types';
 
@@ -97,7 +98,11 @@ function FileRow({
     'group flex items-center gap-3 px-4 h-14 border-b border-gray-200',
     'transition-colors duration-150',
     isDragging ? 'opacity-40' : '',
-    isCover ? 'border-l-[3px] border-l-brand-600 bg-brand-25' : 'hover:bg-gray-50',
+    file.error
+      ? 'bg-error-25 opacity-60'
+      : isCover
+        ? 'border-l-[3px] border-l-brand-600 bg-brand-25'
+        : 'hover:bg-gray-50',
     disabled ? 'pointer-events-none' : '',
   ].join(' ');
 
@@ -123,6 +128,8 @@ function FileRow({
       <div className="flex-shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center">
         {file.loading ? (
           <Loader2 size={16} strokeWidth={1.5} className="text-gray-400 animate-spin" />
+        ) : file.error ? (
+          <Lock size={20} strokeWidth={1.5} className="text-error-500" aria-hidden="true" />
         ) : file.thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -142,18 +149,23 @@ function FileRow({
       {/* Filename + PDF page count */}
       <div className="flex-1 min-w-0">
         <p
-          className="text-sm font-medium text-gray-700 truncate max-w-[40ch]"
+          className={[
+            'text-sm font-medium truncate max-w-[40ch]',
+            file.error ? 'text-error-600' : 'text-gray-700',
+          ].join(' ')}
           title={file.name}
         >
           {file.name}
         </p>
-        {file.format === 'PDF' && (
+        {file.error ? (
+          <p className="text-xs text-error-500 leading-4">{file.error}</p>
+        ) : file.format === 'PDF' ? (
           <p className="text-xs text-gray-400 leading-4">
             {file.loading || file.pageCount == null
               ? 'Extracting pages...'
               : `${file.pageCount} pages`}
           </p>
-        )}
+        ) : null}
       </div>
 
       {/* Format badge */}

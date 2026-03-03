@@ -300,14 +300,38 @@ async function getPdfjsLib() {
   return pdfjsLib;
 }
 
+/** Error subclass for password-protected PDFs. */
+class PasswordProtectedError extends Error {
+  constructor(filename?: string) {
+    super(
+      filename
+        ? `"${filename}" is password-protected and cannot be converted.`
+        : 'This PDF is password-protected and cannot be converted.'
+    );
+    this.name = 'PasswordProtectedError';
+  }
+}
+
 /** Returns the real page count of a PDF file. */
 async function getPdfPageCount(file: File): Promise<number> {
   const pdfjsLib = await getPdfjsLib();
   const bytes = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-  const count = pdf.numPages;
-  pdf.destroy();
-  return count;
+  try {
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const count = pdf.numPages;
+    pdf.destroy();
+    return count;
+  } catch (err: unknown) {
+    // PDF.js throws PasswordException for encrypted PDFs
+    if (
+      err instanceof Error &&
+      (err.name === 'PasswordException' ||
+        err.message?.toLowerCase().includes('password'))
+    ) {
+      throw new PasswordProtectedError(file.name);
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -460,14 +484,32 @@ async function buildCBZ(
 ): Promise<ConversionResult> {
   const startTime = Date.now();
   const warnings: string[] = [];
+  const skippedFiles: Array<{ name: string; reason: string }> = [];
   const zip = new JSZip();
+
+  // ------------------------------------------------------------------
+  // Filter out files with errors (e.g. password-protected PDFs)
+  // ------------------------------------------------------------------
+  const processableFiles = files.filter((f) => {
+    if (f.error) {
+      skippedFiles.push({ name: f.name, reason: f.error });
+      return false;
+    }
+    return true;
+  });
+
+  if (processableFiles.length === 0) {
+    throw new Error(
+      'No files to convert. All files were skipped — check for password-protected PDFs.'
+    );
+  }
 
   // ------------------------------------------------------------------
   // Pass 1: determine total page count across all inputs so we can
   // compute zero-padding width and pre-announce totalPages.
   // ------------------------------------------------------------------
   let totalPages = 0;
-  for (const f of files) {
+  for (const f of processableFiles) {
     totalPages += f.format === 'PDF' ? (f.pageCount ?? 0) : 1;
   }
 
@@ -478,13 +520,13 @@ async function buildCBZ(
   let pageIndex = 0; // 1-based after increment
 
   // Load PDF.js once if needed, outside the per-file loop
-  const hasPdf = files.some((f) => f.format === 'PDF');
+  const hasPdf = processableFiles.some((f) => f.format === 'PDF');
   const pdfjsLib = hasPdf ? await getPdfjsLib() : null;
 
   // ------------------------------------------------------------------
   // Pass 2: process each file
   // ------------------------------------------------------------------
-  for (const appFile of files) {
+  for (const appFile of processableFiles) {
     if (cancelToken.cancelled) throw new Error('cancelled');
 
     if (appFile.format === 'PDF') {
@@ -492,7 +534,22 @@ async function buildCBZ(
       // PDF: render each page to canvas via PDF.js
       // ------------------------------------------------------------------
       const bytes = await appFile.file.arrayBuffer();
-      const pdf = await pdfjsLib!.getDocument({ data: bytes }).promise;
+      let pdf;
+      try {
+        pdf = await pdfjsLib!.getDocument({ data: bytes }).promise;
+      } catch (err: unknown) {
+        // Catch password-protected PDFs that weren't detected earlier
+        if (
+          err instanceof Error &&
+          (err.name === 'PasswordException' ||
+            err.message?.toLowerCase().includes('password'))
+        ) {
+          skippedFiles.push({ name: appFile.name, reason: 'Password protected' });
+          warnings.push(`"${appFile.name}" is password-protected and was skipped.`);
+          continue;
+        }
+        throw err;
+      }
       const pageCount = pdf.numPages;
 
       // If the stored pageCount was wrong (e.g. still null from a fast drop),
@@ -641,6 +698,11 @@ async function buildCBZ(
 
   const elapsed = (Date.now() - startTime) / 1000;
 
+  // Surface skipped files as warnings so the user sees them
+  for (const sf of skippedFiles) {
+    warnings.push(`Skipped "${sf.name}": ${sf.reason}`);
+  }
+
   return {
     filename: 'output.cbz', // overwritten by caller with real output name
     sizeBytes: zipBlob.size,
@@ -692,6 +754,7 @@ export default function CBZConverterPage() {
           thumbnailUrl: null,
           file,
           loading: true,
+          error: null,
         };
         validFiles.push(appFile);
       }
@@ -720,13 +783,26 @@ export default function CBZConverterPage() {
                 patch: { pageCount, loading: false },
               });
             })
-            .catch(() => {
-              // Graceful fallback: mark as 0 pages and let conversion surface a real error
-              dispatch({
-                type: 'UPDATE_FILE',
-                id: appFile.id,
-                patch: { pageCount: 0, loading: false },
-              });
+            .catch((err) => {
+              if (err instanceof PasswordProtectedError) {
+                dispatch({
+                  type: 'UPDATE_FILE',
+                  id: appFile.id,
+                  patch: { pageCount: 0, loading: false, error: 'Password protected' },
+                });
+                dispatch({
+                  type: 'SHOW_TOAST',
+                  message: `"${appFile.name}" is password-protected and will be skipped.`,
+                  variant: 'warning',
+                });
+              } else {
+                // Graceful fallback: mark as 0 pages and let conversion surface a real error
+                dispatch({
+                  type: 'UPDATE_FILE',
+                  id: appFile.id,
+                  patch: { pageCount: 0, loading: false },
+                });
+              }
             });
         } else {
           readImageDimensions(appFile.file)
@@ -824,7 +900,8 @@ export default function CBZConverterPage() {
   const isSuccess = state.status === 'success';
   const isError = state.status === 'error';
   const hasFiles = state.files.length > 0;
-  const canConvert = hasFiles && !isProcessing;
+  const allFilesErrored = hasFiles && state.files.every((f) => f.error !== null);
+  const canConvert = hasFiles && !isProcessing && !allFilesErrored;
 
   const totalPages = state.files.reduce((acc, f) => acc + (f.pageCount ?? (f.format === 'PDF' ? 0 : 1)), 0);
   const totalSize = state.files.reduce((acc, f) => acc + f.size, 0);
@@ -1000,6 +1077,7 @@ export default function CBZConverterPage() {
               <ConvertButton
                 disabled={!canConvert}
                 hasFiles={hasFiles}
+                allFilesErrored={allFilesErrored}
                 onClick={handleConvert}
               />
             </div>
@@ -1022,6 +1100,7 @@ export default function CBZConverterPage() {
           <ConvertButton
             disabled={!canConvert}
             hasFiles={hasFiles}
+            allFilesErrored={allFilesErrored}
             onClick={handleConvert}
             fullWidth
           />
@@ -1038,17 +1117,24 @@ export default function CBZConverterPage() {
 interface ConvertButtonProps {
   disabled: boolean;
   hasFiles: boolean;
+  allFilesErrored?: boolean;
   onClick: () => void;
   fullWidth?: boolean;
 }
 
-function ConvertButton({ disabled, hasFiles, onClick, fullWidth = false }: ConvertButtonProps) {
+function ConvertButton({ disabled, hasFiles, allFilesErrored, onClick, fullWidth = false }: ConvertButtonProps) {
+  const title = !hasFiles
+    ? 'Add files to begin.'
+    : allFilesErrored
+      ? 'All files have errors — remove or replace password-protected PDFs.'
+      : undefined;
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={!hasFiles ? 'Add files to begin.' : undefined}
+      title={title}
       aria-disabled={disabled}
       className={[
         'inline-flex items-center justify-center gap-2',

@@ -73,9 +73,11 @@ interface DryRunEntry {
 }
 
 function buildEntries(files: AppFile[], options: ConversionOptions): DryRunEntry[] {
+  // Skip files with errors (e.g. password-protected PDFs) to match conversion behavior
+  const processable = files.filter((f) => !f.error);
   // Expand PDF page counts
   const expanded: Array<{ source: AppFile; pageIndex: number | null }> = [];
-  for (const file of files) {
+  for (const file of processable) {
     if (file.format === 'PDF') {
       const pages = file.pageCount ?? 1;
       for (let i = 0; i < pages; i++) {

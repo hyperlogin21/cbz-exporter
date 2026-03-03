@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Loader2,
   Lock,
+  Unlock,
 } from 'lucide-react';
 import type { AppFile, FileFormat } from '@/types';
 
@@ -79,6 +80,7 @@ interface FileRowProps {
   onDragStart: (index: number) => void;
   onDragOver: (index: number) => void;
   onDragEnd: () => void;
+  onUnlockPdf: (id: string, password: string) => void;
 }
 
 function FileRow({
@@ -91,20 +93,31 @@ function FileRow({
   onDragStart,
   onDragOver,
   onDragEnd,
+  onUnlockPdf,
 }: FileRowProps) {
+  const [passwordValue, setPasswordValue] = useState('');
   const dims = formatDimensions(file.width, file.height);
+  const isPasswordError =
+    file.error === 'Password protected' || file.error === 'Incorrect password';
 
   const rowClasses = [
-    'group flex items-center gap-3 px-4 h-14 border-b border-gray-200',
+    'group border-b border-gray-200',
     'transition-colors duration-150',
     isDragging ? 'opacity-40' : '',
     file.error
-      ? 'bg-error-25 opacity-60'
+      ? 'bg-error-25'
       : isCover
         ? 'border-l-[3px] border-l-brand-600 bg-brand-25'
         : 'hover:bg-gray-50',
     disabled ? 'pointer-events-none' : '',
   ].join(' ');
+
+  const handleUnlock = () => {
+    const trimmed = passwordValue.trim();
+    if (trimmed) {
+      onUnlockPdf(file.id, trimmed);
+    }
+  };
 
   return (
     <li
@@ -116,89 +129,130 @@ function FileRow({
       onDragEnd={onDragEnd}
       aria-label={`${file.name}, ${formatSize(file.size)}`}
     >
-      {/* Drag handle — visible on hover */}
-      <div
-        className="hidden md:flex items-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing flex-shrink-0"
-        aria-hidden="true"
-      >
-        <GripVertical size={20} strokeWidth={1.5} />
-      </div>
-
-      {/* Thumbnail */}
-      <div className="flex-shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center">
-        {file.loading ? (
-          <Loader2 size={16} strokeWidth={1.5} className="text-gray-400 animate-spin" />
-        ) : file.error ? (
-          <Lock size={20} strokeWidth={1.5} className="text-error-500" aria-hidden="true" />
-        ) : file.thumbnailUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={file.thumbnailUrl}
-            alt=""
-            aria-hidden="true"
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : file.format === 'PDF' ? (
-          <FileText size={20} strokeWidth={1.5} className="text-error-400" aria-hidden="true" />
-        ) : (
-          <ImageIcon size={20} strokeWidth={1.5} className="text-gray-400" aria-hidden="true" />
-        )}
-      </div>
-
-      {/* Filename + PDF page count */}
-      <div className="flex-1 min-w-0">
-        <p
-          className={[
-            'text-sm font-medium truncate max-w-[40ch]',
-            file.error ? 'text-error-600' : 'text-gray-700',
-          ].join(' ')}
-          title={file.name}
+      {/* Main row content */}
+      <div className={[
+        'flex items-center gap-3 px-4 h-14',
+        file.error ? 'opacity-60' : '',
+      ].join(' ')}>
+        {/* Drag handle — visible on hover */}
+        <div
+          className="hidden md:flex items-center text-gray-300 group-hover:text-gray-400 cursor-grab active:cursor-grabbing flex-shrink-0"
+          aria-hidden="true"
         >
-          {file.name}
-        </p>
-        {file.error ? (
-          <p className="text-xs text-error-500 leading-4">{file.error}</p>
-        ) : file.format === 'PDF' ? (
-          <p className="text-xs text-gray-400 leading-4">
-            {file.loading || file.pageCount == null
-              ? 'Extracting pages...'
-              : `${file.pageCount} pages`}
+          <GripVertical size={20} strokeWidth={1.5} />
+        </div>
+
+        {/* Thumbnail */}
+        <div className="flex-shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center">
+          {file.loading ? (
+            <Loader2 size={16} strokeWidth={1.5} className="text-gray-400 animate-spin" />
+          ) : file.error ? (
+            <Lock size={20} strokeWidth={1.5} className="text-error-500" aria-hidden="true" />
+          ) : file.thumbnailUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={file.thumbnailUrl}
+              alt=""
+              aria-hidden="true"
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          ) : file.format === 'PDF' ? (
+            <FileText size={20} strokeWidth={1.5} className="text-error-400" aria-hidden="true" />
+          ) : (
+            <ImageIcon size={20} strokeWidth={1.5} className="text-gray-400" aria-hidden="true" />
+          )}
+        </div>
+
+        {/* Filename + PDF page count */}
+        <div className="flex-1 min-w-0">
+          <p
+            className={[
+              'text-sm font-medium truncate max-w-[40ch]',
+              file.error ? 'text-error-600' : 'text-gray-700',
+            ].join(' ')}
+            title={file.name}
+          >
+            {file.name}
           </p>
-        ) : null}
+          {file.error ? (
+            <p className="text-xs text-error-500 leading-4">{file.error}</p>
+          ) : file.format === 'PDF' ? (
+            <p className="text-xs text-gray-400 leading-4">
+              {file.loading || file.pageCount == null
+                ? 'Extracting pages...'
+                : `${file.pageCount} pages`}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Format badge */}
+        <div className="hidden sm:block flex-shrink-0">
+          <FormatBadge format={file.format} />
+        </div>
+
+        {/* File size */}
+        <div className="hidden sm:block flex-shrink-0 text-xs text-gray-500 w-16 text-right">
+          {formatSize(file.size)}
+        </div>
+
+        {/* Dimensions — hidden on mobile */}
+        <div className="hidden md:block flex-shrink-0 text-xs text-gray-400 w-24 text-right">
+          {file.loading ? (
+            <span className="text-gray-300">—</span>
+          ) : dims ? (
+            dims
+          ) : (
+            <span className="text-gray-300">—</span>
+          )}
+        </div>
+
+        {/* Remove button */}
+        <button
+          type="button"
+          onClick={() => onRemove(file.id)}
+          aria-label={`Remove ${file.name}`}
+          className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
+          disabled={disabled}
+        >
+          <X size={16} strokeWidth={1.5} aria-hidden="true" />
+        </button>
       </div>
 
-      {/* Format badge */}
-      <div className="hidden sm:block flex-shrink-0">
-        <FormatBadge format={file.format} />
-      </div>
-
-      {/* File size */}
-      <div className="hidden sm:block flex-shrink-0 text-xs text-gray-500 w-16 text-right">
-        {formatSize(file.size)}
-      </div>
-
-      {/* Dimensions — hidden on mobile */}
-      <div className="hidden md:block flex-shrink-0 text-xs text-gray-400 w-24 text-right">
-        {file.loading ? (
-          <span className="text-gray-300">—</span>
-        ) : dims ? (
-          dims
-        ) : (
-          <span className="text-gray-300">—</span>
-        )}
-      </div>
-
-      {/* Remove button */}
-      <button
-        type="button"
-        onClick={() => onRemove(file.id)}
-        aria-label={`Remove ${file.name}`}
-        className="flex-shrink-0 flex items-center justify-center w-7 h-7 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600"
-        disabled={disabled}
-      >
-        <X size={16} strokeWidth={1.5} aria-hidden="true" />
-      </button>
+      {/* Password input row — only for password-protected PDFs */}
+      {isPasswordError && !file.loading && (
+        <div className="flex items-center gap-2 px-4 pb-3 pl-[4.25rem]">
+          <input
+            type="password"
+            value={passwordValue}
+            onChange={(e) => setPasswordValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleUnlock();
+            }}
+            placeholder="Enter PDF password"
+            className="h-8 px-2.5 text-sm rounded-md border border-gray-300 bg-white text-gray-700 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600 w-48"
+            aria-label={`Password for ${file.name}`}
+            disabled={disabled}
+            autoComplete="off"
+          />
+          <button
+            type="button"
+            onClick={handleUnlock}
+            disabled={disabled || !passwordValue.trim()}
+            className={[
+              'inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors duration-150',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600',
+              passwordValue.trim()
+                ? 'bg-brand-600 text-white hover:bg-brand-700 active:bg-brand-800'
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed',
+            ].join(' ')}
+            aria-label={`Unlock ${file.name}`}
+          >
+            <Unlock size={14} strokeWidth={1.5} aria-hidden="true" />
+            Unlock
+          </button>
+        </div>
+      )}
     </li>
   );
 }
@@ -218,6 +272,7 @@ interface FileListProps {
   onRemove: (id: string) => void;
   onReorder: (files: AppFile[]) => void;
   onClearAll: () => void;
+  onUnlockPdf: (id: string, password: string) => void;
 }
 
 export default function FileList({
@@ -229,6 +284,7 @@ export default function FileList({
   onRemove,
   onReorder,
   onClearAll,
+  onUnlockPdf,
 }: FileListProps) {
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
   const [dragToIndex, setDragToIndex] = useState<number | null>(null);
@@ -310,6 +366,7 @@ export default function FileList({
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
+            onUnlockPdf={onUnlockPdf}
           />
         ))}
 

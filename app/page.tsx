@@ -312,12 +312,15 @@ class PasswordProtectedError extends Error {
   }
 }
 
-/** Returns the real page count of a PDF file. */
-async function getPdfPageCount(file: File): Promise<number> {
+/** Returns the real page count of a PDF file. Accepts an optional password for encrypted PDFs. */
+async function getPdfPageCount(file: File, password?: string): Promise<number> {
   const pdfjsLib = await getPdfjsLib();
   const bytes = await file.arrayBuffer();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const params: Record<string, any> = { data: bytes };
+  if (password) params.password = password;
   try {
-    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const pdf = await pdfjsLib.getDocument(params).promise;
     const count = pdf.numPages;
     pdf.destroy();
     return count;
@@ -534,9 +537,12 @@ async function buildCBZ(
       // PDF: render each page to canvas via PDF.js
       // ------------------------------------------------------------------
       const bytes = await appFile.file.arrayBuffer();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const docParams: Record<string, any> = { data: bytes };
+      if (appFile.password) docParams.password = appFile.password;
       let pdf;
       try {
-        pdf = await pdfjsLib!.getDocument({ data: bytes }).promise;
+        pdf = await pdfjsLib!.getDocument(docParams).promise;
       } catch (err: unknown) {
         // Catch password-protected PDFs that weren't detected earlier
         if (
@@ -755,6 +761,7 @@ export default function CBZConverterPage() {
           file,
           loading: true,
           error: null,
+          password: null,
         };
         validFiles.push(appFile);
       }
@@ -792,7 +799,7 @@ export default function CBZConverterPage() {
                 });
                 dispatch({
                   type: 'SHOW_TOAST',
-                  message: `"${appFile.name}" is password-protected and will be skipped.`,
+                  message: `"${appFile.name}" is password-protected. Enter the password to unlock it.`,
                   variant: 'warning',
                 });
               } else {
@@ -833,6 +840,52 @@ export default function CBZConverterPage() {
       variant: 'error',
     });
   }, []);
+
+  // ---------------------------------------------------------------------------
+  // PDF password unlock
+  // ---------------------------------------------------------------------------
+
+  const handleUnlockPdf = useCallback(
+    async (id: string, password: string) => {
+      const file = state.files.find((f) => f.id === id);
+      if (!file) return;
+
+      dispatch({
+        type: 'UPDATE_FILE',
+        id,
+        patch: { loading: true, error: null },
+      });
+
+      try {
+        const pageCount = await getPdfPageCount(file.file, password);
+        dispatch({
+          type: 'UPDATE_FILE',
+          id,
+          patch: { pageCount, loading: false, password, error: null },
+        });
+        dispatch({
+          type: 'SHOW_TOAST',
+          message: `"${file.name}" unlocked successfully.`,
+          variant: 'success',
+        });
+      } catch (err) {
+        if (err instanceof PasswordProtectedError) {
+          dispatch({
+            type: 'UPDATE_FILE',
+            id,
+            patch: { loading: false, error: 'Incorrect password' },
+          });
+        } else {
+          dispatch({
+            type: 'UPDATE_FILE',
+            id,
+            patch: { loading: false, error: 'Failed to read PDF' },
+          });
+        }
+      }
+    },
+    [state.files]
+  );
 
   // ---------------------------------------------------------------------------
   // Conversion
@@ -981,6 +1034,7 @@ export default function CBZConverterPage() {
               onReorder={(files) => dispatch({ type: 'REORDER_FILES', files })}
               onClearAll={handleClearAll}
               selectedCoverIndex={state.metadata.coverPageIndex}
+              onUnlockPdf={handleUnlockPdf}
             />
           </section>
         )}
@@ -1126,7 +1180,7 @@ function ConvertButton({ disabled, hasFiles, allFilesErrored, onClick, fullWidth
   const title = !hasFiles
     ? 'Add files to begin.'
     : allFilesErrored
-      ? 'All files have errors — remove or replace password-protected PDFs.'
+      ? 'All files have errors — unlock, remove, or replace password-protected PDFs.'
       : undefined;
 
   return (

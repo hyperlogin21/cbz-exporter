@@ -31,6 +31,8 @@ export interface AppFile {
   loading: boolean;
   /** Per-file error preventing conversion (e.g. "Password protected") */
   error: string | null;
+  /** Password for encrypted PDFs (null if not password-protected or not yet provided) */
+  password: string | null;
 }
 
 // ---------------------------------------------------------------------------

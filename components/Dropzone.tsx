@@ -254,7 +254,11 @@ export default function Dropzone({
   const onFolderInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
-        processFiles(e.target.files);
+        // Sort folder files by name (ascending, natural numeric order)
+        const sorted = Array.from(e.target.files).sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+        );
+        processFiles(sorted);
         e.target.value = '';
       }
     },

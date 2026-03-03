@@ -205,14 +205,11 @@ function reducer(state: AppState, action: AppAction): AppState {
     }
 
     case 'RESET': {
-      // Keep files and options; reset only result/error/progress
-      return {
-        ...state,
-        status: state.files.length > 0 ? 'files-added' : 'empty',
-        progress: null,
-        result: null,
-        error: null,
-      };
+      // Full reset: clear files, options, and all state
+      state.files.forEach((f) => {
+        if (f.thumbnailUrl) URL.revokeObjectURL(f.thumbnailUrl);
+      });
+      return { ...INITIAL_STATE };
     }
 
     case 'SHOW_TOAST': {
